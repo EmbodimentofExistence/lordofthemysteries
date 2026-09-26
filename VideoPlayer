@@ -1,0 +1,72 @@
+-- Roblox Video Player (EditableImage edition) — server part
+-- Place a Script named "VideoPlayer" inside a SurfaceGui (under a Part in
+-- Workspace). Requires two children:
+--   * "VideoData"  : ModuleScript with the converted video (from the converter)
+--   * "VideoClient": LocalScript template containing RobloxClient.lua
+--
+-- HOW IT WORKS
+--   The server sets up the SurfaceGui with a single full-screen ImageLabel and
+--   clones the "VideoClient" LocalScript template into every player's
+--   PlayerGui. Each client then decodes the video and renders it into its OWN
+--   EditableImage, updating it once per video frame with a single
+--   WritePixelsBuffer call.
+--
+-- WHY THIS IS SMOOTH
+--   EditableImage content does NOT replicate, so this avoids the previous
+--   per-pixel-Frame approach entirely. There, the server had to replicate
+--   thousands of BackgroundColor3 property changes per video frame, which is
+--   what caused the lag. Here a client writes pixels locally and shows one
+--   texture — no replication overhead, no per-pixel GUI objects.
+--
+-- PUBLISHING NOTE
+--   For PUBLISHED experiences EditableImage APIs must be enabled in Studio:
+--   Experience Settings -> Security -> "Allow Mesh & Image APIs" (requires a
+--   verified, 13+ account). Studio playtest works without any extra setup.
+
+local Players = game:GetService("Players")
+
+-- ===== LOAD VIDEO =====
+local data = require(script:WaitForChild("VideoData"))
+local W, H, FPS = data.Width, data.Height, data.FPS
+local P = data.P
+assert(W and H and FPS and P, "VideoData invalid")
+
+local gridSize = W * H
+
+-- ===== GUI SETUP (one ImageLabel, no per-pixel objects) =====
+local gui = script.Parent
+gui.Face = Enum.NormalId.Front
+gui.CanvasSize = Vector2.new(W, H)
+gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+gui.PixelsPerStud = 140
+gui.Enabled = false -- enabled by the client renderer when the player is near
+
+local label = Instance.new("ImageLabel")
+label.Name = "VideoLabel"
+label.Size = UDim2.fromScale(1, 1)
+label.Position = UDim2.fromScale(0, 0)
+label.BackgroundColor3 = Color3.new(0, 0, 0)
+label.BackgroundTransparency = 1
+label.ImageColor3 = Color3.new(1, 1, 1)
+label.ImageTransparency = 0
+label.ResampleMode = Enum.ResamplerMode.Pixelated
+label.Parent = gui
+
+-- ===== CLONE THE CLIENT RENDERER INTO EVERY PLAYER'S PLAYERGUI =====
+-- Cloning a LocalScript preserves its Source, which cannot be written at
+-- runtime, so the renderer lives as a static template child of this script.
+local clientTemplate = script:WaitForChild("VideoClient")
+
+local function spawnFor(player)
+	local pg = player:WaitForChild("PlayerGui")
+	local renderer = clientTemplate:Clone()
+	renderer.Name = "VideoRenderer"
+	renderer.Parent = pg
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+	task.spawn(spawnFor, p)
+end
+Players.PlayerAdded:Connect(spawnFor)
+
+print(("Video ready: %dx%d @ %d FPS (%d pixels)"):format(W, H, FPS, gridSize))

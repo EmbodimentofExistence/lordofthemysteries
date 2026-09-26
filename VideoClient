@@ -1,0 +1,290 @@
+-- Roblox Video Player (EditableImage edition) — client renderer
+-- This is a LocalScript template (child of the "VideoPlayer" Script, named
+-- "VideoClient"). The server clones it into each player's PlayerGui where it
+-- runs on the client. It decodes the video and renders it into a local
+-- EditableImage once per video frame (single WritePixelsBuffer call).
+--
+-- See RobloxScript.txt for the full explanation.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local AssetService = game:GetService("AssetService")
+local player = Players.LocalPlayer
+
+local MAX_DISTANCE = 120 -- studs; video pauses when the player walks away
+
+-- Locate the screen. The part/SurfaceGui/VideoData replicate from the server,
+-- so we search Workspace once and retry until it is available.
+local function findScreen()
+	while true do
+		for _, sg in ipairs(workspace:GetDescendants()) do
+			if sg:IsA("SurfaceGui") then
+				local plrScript = sg:FindFirstChild("VideoPlayer")
+				local vidLabel = sg:FindFirstChild("VideoLabel")
+				local dataMod = plrScript and plrScript:FindFirstChild("VideoData")
+				if plrScript and vidLabel and dataMod and sg.Parent then
+					return sg, sg.Parent, vidLabel, dataMod
+				end
+			end
+		end
+		task.wait()
+	end
+end
+
+local gui, screenPart, label, dataMod = findScreen()
+local data = require(dataMod)
+local W, H, FPS = data.Width, data.Height, data.FPS
+local P = data.P
+assert(W and H and FPS and P, "VideoData invalid")
+
+-- Clamp to the EditableImage size limit and warn if we had to shrink.
+local outW = math.min(W, 1024)
+local outH = math.min(H, 1024)
+if outW ~= W or outH ~= H then
+	warn("Video grid larger than EditableImage 1024x1024 limit; clipped to " .. outW .. "x" .. outH)
+end
+local outCells = outW * outH
+
+-- ===== BASE64 DECODE =====
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local b64val = {}
+for i = 1, #B64 do
+	b64val[B64:sub(i, i)] = i - 1
+end
+b64val["="] = 0
+
+local function base64ToBytes(s)
+	s = s:gsub("%s+", "")
+	local parts, part = {}, {}
+	local cnt, i, n = 0, 1, #s
+	while i <= n do
+		local b1 = b64val[s:sub(i, i)]
+		local b2 = b64val[s:sub(i + 1, i + 1)]
+		local b3 = b64val[s:sub(i + 2, i + 2)] or 0
+		local b4 = b64val[s:sub(i + 3, i + 3)] or 0
+		local v = b1 * 262144 + b2 * 4096 + b3 * 64 + b4
+		part[#part + 1] = string.char(math.floor(v / 65536) % 256)
+		if s:sub(i + 2, i + 2) ~= "=" then
+			part[#part + 1] = string.char(math.floor(v / 256) % 256)
+		end
+		if s:sub(i + 3, i + 3) ~= "=" then
+			part[#part + 1] = string.char(v % 256)
+		end
+		i += 4
+		cnt += 1
+		if cnt == 512 then
+			parts[#parts + 1] = table.concat(part)
+			part = {}
+			cnt = 0
+		end
+	end
+	if #part > 0 then
+		parts[#parts + 1] = table.concat(part)
+	end
+	return table.concat(parts)
+end
+
+local bs = buffer.fromstring(base64ToBytes(P))
+
+-- ===== BYTE STREAM READERS =====
+local pos = 0
+local function readU8()
+	local v = buffer.readu8(bs, pos)
+	pos += 1
+	return v
+end
+
+local function readVarint()
+	local v, shift = 0, 0
+	while true do
+		local b = readU8()
+		v = v + (b % 128) * 2 ^ shift
+		if b < 128 then
+			return v
+		end
+		shift += 7
+	end
+end
+
+-- ===== FRAME DECODERS (produce 12-bit RGB444 color tables) =====
+local gridSize = W * H
+local function decodeFullFrame()
+	local colors = {}
+	local i = 0
+	for _ = 1, math.ceil(gridSize / 2) do
+		local b0 = readU8()
+		local b1 = readU8()
+		local b2 = readU8()
+		local v = b0 * 65536 + b1 * 256 + b2
+		i += 1
+		colors[i] = math.floor(v / 4096)
+		if i < gridSize then
+			i += 1
+			colors[i] = v % 4096
+		end
+	end
+	return colors
+end
+
+local function decodeDeltaFrame()
+	local count = readVarint()
+	local idx, ops = -1, {}
+	for i = 1, count do
+		idx += readVarint() + 1
+		ops[i] = { idx = idx }
+	end
+	local k = 0
+	for _ = 1, math.ceil(count / 2) do
+		local b0 = readU8()
+		local b1 = readU8()
+		local b2 = readU8()
+		local v = b0 * 65536 + b1 * 256 + b2
+		k += 1
+		if k <= count then
+			ops[k].c = math.floor(v / 4096)
+		end
+		k += 1
+		if k <= count then
+			ops[k].c = v % 4096
+		end
+	end
+	return ops
+end
+
+-- ===== PARSE FRAME INDEX (metadata only, lazy decode) =====
+local numFrames = readVarint()
+local totalFrames = readVarint()
+local frames = {}
+local t = 0
+for i = 1, numFrames do
+	local step = readVarint()
+	local kind = readU8()
+	t += step
+	local offset = pos
+	if kind == 0 then
+		pos += math.ceil(gridSize / 2) * 3
+	else
+		local count = readVarint()
+		for _ = 1, count do
+			readVarint()
+		end
+		pos += math.ceil(count / 2) * 3
+	end
+	frames[i] = { kind = kind, target = t, offset = offset }
+end
+
+assert(numFrames > 0, "VideoData contains no frames")
+
+local function getFrame(i)
+	local fr = frames[i]
+	if not fr.decoded then
+		pos = fr.offset
+		if fr.kind == 0 then
+			fr.decoded = { full = decodeFullFrame() }
+		else
+			fr.decoded = { ops = decodeDeltaFrame() }
+		end
+	end
+	return fr.decoded
+end
+
+-- ===== EDITAABLE IMAGE + PIXEL BUFFER =====
+local editableImage = AssetService:CreateEditableImage({ Size = Vector2.new(outW, outH) })
+label.ImageContent = Content.fromObject(editableImage)
+
+-- RGBA pixel buffer, one WritePixelsBuffer call per video frame.
+local px = buffer.create(outCells * 4)
+local function writeColorAt(c, base)
+	local r = math.floor(c / 256) % 16
+	local g = math.floor(c / 16) % 16
+	local b = c % 16
+	buffer.writeu8(px, base, r * 17)
+	buffer.writeu8(px, base + 1, g * 17)
+	buffer.writeu8(px, base + 2, b * 17)
+	buffer.writeu8(px, base + 3, 255)
+end
+
+-- Current color state (12-bit RGB444 per cell), row-major top-left.
+local cur = {}
+for i = 1, gridSize do
+	cur[i] = 0
+end
+
+-- playback state (declared before render so it is captured as a proper upvalue)
+local LOOP = true
+local frameTime = 1 / FPS
+local acc = 0
+local elapsed = 0
+local nextFrame = 2
+
+local function render(fr)
+	if fr.full then
+		for i = 1, gridSize do
+			cur[i] = fr.full[i]
+		end
+	else
+		for k, op in ipairs(fr.ops) do
+			cur[op.idx + 1] = op.c
+		end
+	end
+	local n = math.min(gridSize, outCells)
+	for i = 1, n do
+		writeColorAt(cur[i], (i - 1) * 4)
+	end
+	editableImage:WritePixelsBuffer(Vector2.new(0, 0), Vector2.new(outW, outH), px)
+
+	-- lightweight debug signal: frame counter + pixel checksum so tools can
+	-- verify the video is animating (attributes are cheap and local-only)
+	local sig = 0
+	for i = 1, n do
+		sig = sig + cur[i]
+	end
+	label:SetAttribute("FrameN", elapsed)
+	label:SetAttribute("PixelSig", sig)
+end
+
+-- ===== DISTANCE CULLING (local player) =====
+local function localPlayerClose()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		return (hrp.Position - screenPart.Position).Magnitude <= MAX_DISTANCE
+	end
+	return false
+end
+
+-- ===== PLAYBACK =====
+-- show the first frame immediately so the screen is not blank
+render(getFrame(1))
+gui.Enabled = true
+
+RunService.Heartbeat:Connect(function(dt)
+	local near = localPlayerClose()
+	gui.Enabled = near
+	if not near then
+		return
+	end
+
+	acc += dt
+	while acc >= frameTime do
+		acc -= frameTime
+		elapsed += 1
+
+		if elapsed > totalFrames then
+			if LOOP then
+				elapsed = 0
+				nextFrame = 2
+				render(getFrame(1))
+			else
+				return
+			end
+		else
+			while nextFrame <= numFrames and frames[nextFrame].target <= elapsed do
+				render(getFrame(nextFrame))
+				nextFrame += 1
+			end
+		end
+	end
+end)
+
+print(("Client video ready: %dx%d @ %d FPS, %d frames (%d pixels)"):format(W, H, FPS, numFrames, gridSize))

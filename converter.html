@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roblox Video Converter</title>
+<style>
+:root{color-scheme:dark;--bg:#08090d;--panel:#11131a;--panel2:#171a23;--line:#282d39;--text:#f4f5f7;--muted:#9ba3b3;--accent:#7c5cff;--accent2:#9a83ff;--danger:#ff5c70;--good:#49d18d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#171329 0,#08090d 42%);color:var(--text);font:14px Inter,system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+.app{width:min(1180px,calc(100% - 32px));margin:28px auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.brand{font-size:23px;font-weight:800}.sub{color:var(--muted);margin-top:4px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}.card{background:linear-gradient(180deg,#13161e,#0f1117);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 18px 60px #0007}.drop{min-height:300px;border:1.5px dashed #454b5c;border-radius:14px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.15s;background:#0c0e13}.drop.drag{border-color:var(--accent);background:#151126}.drop.has{border-style:solid}.drop strong{display:block;font-size:18px}.drop span{display:block;color:var(--muted);margin-top:8px}.preview{width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#000;display:none}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.field input,.field select{width:100%;background:#0a0c11;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px;outline:none}.presets{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.preset,button{border:1px solid var(--line);background:#171a23;color:var(--text);border-radius:9px;padding:10px;cursor:pointer}.preset.active{border-color:var(--accent);background:#211b3b}.primary{width:100%;background:linear-gradient(135deg,var(--accent),#5b42d7);border:0;font-weight:750;font-size:15px;padding:13px;margin-top:14px}.primary:disabled{opacity:.45;cursor:not-allowed}.info{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:10px}.bar{height:9px;background:#090b10;border-radius:20px;overflow:hidden;margin-top:14px}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#42d7ff);transition:width .1s}.status{margin-top:12px;min-height:22px;color:var(--muted)}.log{height:180px;overflow:auto;background:#090b10;border:1px solid var(--line);border-radius:10px;padding:10px;font:12px ui-monospace,SFMono-Regular,monospace;color:#aeb6c7;white-space:pre-wrap}.note{color:var(--muted);font-size:12px;line-height:1.55;margin-top:12px}.warning{color:#ffc76b}.good{color:var(--good)}
+.repair-card{grid-column:1/-1}.subnote{color:var(--muted);line-height:1.55;margin:8px 0 12px}.repairDrop{min-height:150px;border:1.5px dashed #454b5c;border-radius:14px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;background:#0c0e13;transition:.15s}.repairDrop.drag{border-color:var(--accent);background:#151126}.repairDrop strong{display:block;font-size:17px}.repairDrop span{display:block;color:var(--muted);margin-top:7px}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.app{width:min(100% - 18px,1180px);margin:10px auto}.drop{min-height:230px}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="top"><div><div class="brand">Roblox Video Converter</div><div class="sub">Local browser conversion for the EditableImage video player</div></div></div>
+<div class="grid">
+<div class="card">
+<input id="file" type="file" accept="video/*" hidden>
+<div id="drop" class="drop"><div><strong>Drop a video here</strong><span>or click to choose a video file</span></div></div>
+<video id="preview" class="preview" controls muted playsinline></video>
+<div class="info"><span id="sourceInfo">No video selected</span><span id="estimate"></span></div>
+<div class="bar"><i id="bar"></i></div>
+<div id="status" class="status">Ready</div>
+<div class="log" id="log"></div>
+</div>
+<div class="card">
+<strong>Settings</strong>
+<div class="presets">
+<button class="preset" data-p="fast">Fast</button><button class="preset active" data-p="balanced">Balanced</button><button class="preset" data-p="high">High</button><button class="preset" data-p="ultra">Ultra</button>
+</div>
+<div class="row">
+<div class="field"><label>FPS</label><select id="fps"><option>10</option><option selected>15</option><option>20</option><option>30</option><option>60</option></select></div>
+<div class="field"><label>Block Size</label><select id="block"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></div>
+<div class="field"><label>Base Width</label><input id="width" type="number" min="16" max="1024" step="1" value="512"></div>
+<div class="field"><label>Base Height</label><input id="height" type="number" min="16" max="1024" step="1" value="288"></div>
+<div class="field"><label>Max Seconds</label><input id="seconds" type="number" min="1" max="2400" step="1" value="30"></div>
+</div>
+<div class="note">The stored video size is Base Width ÷ Block Size by Base Height ÷ Block Size. Smaller blocks and higher FPS increase processing time and Roblox data size sharply.</div>
+<button id="convert" class="primary" disabled>Convert and Download VideoData.lua</button>
+<div class="note warning">For very large outputs, Chrome/Edge can use a lot of memory. If your browser supports the File System Access API, the converter writes the finished Lua file directly to disk instead of creating a download link.</div>
+</div>
+<div class="card repair-card">
+<strong>Repair Existing VideoData.lua</strong>
+<div class="subnote">Fix editor freezing caused by one enormous Base64 line. This only reformats the existing file. The video data itself is not decoded or re-encoded.</div>
+<input id="repairFile" type="file" accept=".lua,text/plain" hidden>
+<div id="repairDrop" class="repairDrop"><div><strong>Drop VideoData.lua here</strong><span>or click to choose an existing generated file</span></div></div>
+<div class="info"><span id="repairInfo">No VideoData.lua selected</span><span id="repairSize"></span></div>
+<div class="bar"><i id="repairBar"></i></div>
+<div id="repairStatus" class="status">Ready</div>
+<button id="repair" class="primary" disabled>Repair and Download VideoData.lua</button>
+<div class="note good">The repair inserts short line breaks into the Base64 payload. The Roblox player ignores those line breaks, so the encoded video remains unchanged.</div>
+</div>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const fileInput=$("file"),drop=$("drop"),preview=$("preview"),convert=$("convert"),bar=$("bar"),status=$("status"),logEl=$("log");
+let file=null,worker=null,processing=false,saveHandle=null,repairFile=null,repairing=false;
+
+const presets={
+ fast:{fps:10,w:256,h:144,b:8,s:20},
+ balanced:{fps:15,w:256,h:144,b:4,s:30},
+ high:{fps:15,w:384,h:216,b:4,s:30},
+ ultra:{fps:15,w:512,h:288,b:2,s:30}
+};
+function log(x){logEl.textContent+=x+"\\n";logEl.scrollTop=logEl.scrollHeight}
+function setStatus(x){status.textContent=x}
+function settings(){return{fps:+$("fps").value,w:+$("width").value,h:+$("height").value,b:+$("block").value,s:+$("seconds").value}}
+function updateEstimate(){
+ const s=settings(),gw=Math.floor(s.w/s.b),gh=Math.floor(s.h/s.b),frames=file&&preview.duration?Math.min(preview.duration,s.s)*s.fps:0;
+ $("estimate").textContent=`${gw}×${gh} cells · ${frames?Math.ceil(frames).toLocaleString()+" frames":"-"}`;
+}
+document.querySelectorAll(".preset").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll(".preset").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+ const p=presets[b.dataset.p];$("fps").value=p.fps;$("width").value=p.w;$("height").value=p.h;$("block").value=p.b;$("seconds").value=p.s;updateEstimate()
+});
+["fps","width","height","block","seconds"].forEach(id=>$(id).addEventListener("input",updateEstimate));
+drop.onclick=()=>{if(!processing)fileInput.click()};
+fileInput.onchange=()=>selectFile(fileInput.files[0]);
+["dragenter","dragover"].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.add("drag")}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove("drag")}));
+drop.addEventListener("drop",e=>selectFile(e.dataTransfer.files[0]));
+function selectFile(f){
+ if(!f||!f.type.startsWith("video/"))return;
+ file=f;preview.src=URL.createObjectURL(f);preview.style.display="block";drop.style.display="none";
+ preview.onloadedmetadata=()=>{ $("sourceInfo").textContent=`${f.name} · ${(f.size/1048576).toFixed(1)} MB · ${preview.videoWidth}×${preview.videoHeight} · ${preview.duration.toFixed(2)}s`;convert.disabled=false;updateEstimate();setStatus("Ready to convert");log(`Loaded ${f.name}`)}
+}
+function clampSettings(){
+ const s=settings();
+ if(![10,15,20,30,60].includes(s.fps))throw Error("FPS must be 10, 15, 20, 30, or 60.");
+ if(s.w<16||s.w>1024||s.h<16||s.h>1024)throw Error("Base dimensions must be 16–1024.");
+ if(s.b<1||s.b>32)throw Error("Invalid block size.");
+ if(Math.floor(s.w/s.b)<1||Math.floor(s.h/s.b)<1)throw Error("Block size is larger than the video grid.");
+ if(s.s<1||s.s>2400)throw Error("Max Seconds must be 1–2400.");
+ return s
+}
+function seek(video,t){return new Promise((resolve,reject)=>{
+ let done=false;
+ const finish=()=>{if(done)return;done=true;video.removeEventListener("seeked",finish);resolve()};
+ video.addEventListener("seeked",finish,{once:true});video.currentTime=Math.max(0,Math.min(t,video.duration||t));
+ setTimeout(()=>{if(!done){done=true;video.removeEventListener("seeked",finish);reject(Error("Video seek timed out"))}},10000)
+})}
+function makeWorker(){
+ const src=`self.onmessage=function(e){
+ const d=e.data;
+ if(d.type==="init"){self.fps=d.fps;self.total=d.total;self.grid=d.grid;self.prev=null;self.records=0;self.lastFrame=0;self.sinceFull=0;self.binary=[];self.buf=new Uint8Array(786432);self.used=0;self.chunks=[]}
+ function varint(v){v>>>=0;while(v>=128){put(v&127|128);v>>>=7}put(v)}
+ function put(v){if(self.used>=self.buf.length)flush();self.buf[self.used++]=v}
+ function color(a,b){const v=a*4096+b;put(v>>16);put(v>>8&255);put(v&255)}
+ function flush(){if(!self.used)return;const n=self.used-(self.used%3);if(n){self.chunks.push(self.buf.slice(0,n));self.buf.copyWithin(0,n,self.used);self.used-=n}else{}}
+ function addFrame(colors,index){
+   if(!self.prev){varint(0);put(0);for(let i=0;i<colors.length;i+=2)color(colors[i],i+1<colors.length?colors[i+1]:0);self.prev=colors;self.lastFrame=index;self.records=1;self.sinceFull=1;return}
+   let changes=0;for(let i=0;i<colors.length;i++)if(colors[i]!==self.prev[i])changes++;
+   if(!changes){self.prev=colors;return}
+   const full=self.sinceFull>=90||changes>self.grid*.5;
+   varint(index-self.lastFrame);put(full?0:1);
+   if(full){for(let i=0;i<colors.length;i+=2)color(colors[i],i+1<colors.length?colors[i+1]:0);self.sinceFull=1}
+   else{
+     varint(changes);let last=-1;
+     for(let i=0;i<colors.length;i++)if(colors[i]!==self.prev[i]){varint(i-last-1);last=i}
+     let valueCount=0, firstValue=0;
+     for(let i=0;i<colors.length;i++)if(colors[i]!==self.prev[i]){
+       if((valueCount&1)===0)firstValue=colors[i];
+       else color(firstValue,colors[i]);
+       valueCount++;
+     }
+     if(valueCount&1)color(firstValue,0);
+     self.sinceFull++
+   }
+   self.prev=colors;self.lastFrame=index;self.records++
+ }
+ function b64(u){let s="";const n=32768;for(let i=0;i<u.length;i+=n){let x=u.subarray(i,Math.min(i+n,u.length));let q="";for(let j=0;j<x.length;j++)q+=String.fromCharCode(x[j]);s+=btoa(q)}return s}
+ if(d.type==="frame"){addFrame(new Uint16Array(d.colors),d.index);if(d.index%10===0)postMessage({type:"progress",index:d.index,records:self.records})}
+ if(d.type==="finish"){
+   if(self.used) {const n=self.used-(self.used%3);if(n){self.chunks.push(self.buf.slice(0,n));self.used-=n;self.buf.copyWithin(0,n,self.used)}}
+   const remain=self.used; if(remain) self.chunks.push(self.buf.slice(0,remain));
+   postMessage({type:"finish",chunks:self.chunks.map(b64),records:self.records},self.chunks.map(x=>x.buffer))
+ }
+}`;
+ const blob=new Blob([src],{type:"application/javascript"});return new Worker(URL.createObjectURL(blob))
+}
+function luaParts(s,base64Chunks){
+ const head=`return {\\n  Width = ${Math.floor(s.w/s.b)},\\n  Height = ${Math.floor(s.h/s.b)},\\n  FPS = ${s.fps},\\n  P = [==[\\n`;
+ const tail=`\\n]==],\\n}\\n`;
+ return [head,...base64Chunks,tail]
+}
+async function saveLua(parts){
+ if("showSaveFilePicker" in window){
+   try{
+    saveHandle=await window.showSaveFilePicker({suggestedName:"VideoData.lua",types:[{description:"Lua",accept:{"text/plain":[".lua"]}}]});
+    const w=await saveHandle.createWritable();
+    for(const part of parts)await w.write(part);
+    await w.close();return
+   }catch(e){if(e.name==="AbortError")throw e}
+ }
+ const blob=new Blob(parts,{type:"text/plain;charset=utf-8"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="VideoData.lua";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000)
+}
+convert.onclick=async()=>{
+ if(processing||!file)return;
+ let s;try{s=clampSettings()}catch(e){setStatus(e.message);return}
+ processing=true;convert.disabled=true;fileInput.disabled=true;bar.style.width="0%";logEl.textContent="";
+ const gridW=Math.floor(s.w/s.b),gridH=Math.floor(s.h/s.b),total=Math.max(1,Math.floor(Math.min(preview.duration,s.s)*s.fps));
+ log(`Settings: ${s.fps} FPS · ${gridW}×${gridH} cells · block ${s.b} · ${total.toLocaleString()} samples`);
+ log("Using streaming chunk encoder. No giant output array.");
+ const canvas=document.createElement("canvas");canvas.width=gridW*s.b;canvas.height=gridH*s.b;const ctx=canvas.getContext("2d",{willReadFrequently:true});
+ worker=makeWorker();worker.postMessage({type:"init",fps:s.fps,total,grid:gridW*gridH});
+ const chunks=[];let records=0;
+ worker.onmessage=async e=>{
+   if(e.data.type==="progress"){const pct=e.data.index/total*100;bar.style.width=pct+"%";setStatus(`Encoding frame ${e.data.index.toLocaleString()} / ${total.toLocaleString()}`);return}
+   if(e.data.type==="finish"){records=e.data.records;chunks.push(...e.data.chunks);setStatus("Writing Lua file...");bar.style.width="99%";const parts=luaParts(s,chunks);await saveLua(parts);bar.style.width="100%";setStatus(`Done · ${records.toLocaleString()} stored frames`);log(`Downloaded VideoData.lua`);worker.terminate();worker=null;processing=false;convert.disabled=false;fileInput.disabled=false}
+ };
+ try{
+  preview.pause();
+  for(let i=0;i<total;i++){
+   if(!processing)break;
+   const t=Math.min((i/s.fps),Math.max(0,Math.min(preview.duration,s.s)-0.0001));
+   await seek(preview,t);
+   ctx.drawImage(preview,0,0,canvas.width,canvas.height);
+   const img=ctx.getImageData(0,0,canvas.width,canvas.height),colors=new Uint16Array(gridW*gridH);
+   let k=0;
+   for(let y=0;y<canvas.height;y+=s.b)for(let x=0;x<canvas.width;x+=s.b){
+    let r=0,g=0,b=0,n=0;
+    for(let yy=0;yy<s.b&&y+yy<canvas.height;yy++)for(let xx=0;xx<s.b&&x+xx<canvas.width;xx++){const q=((y+yy)*canvas.width+x+xx)*4;r+=img.data[q];g+=img.data[q+1];b+=img.data[q+2];n++}
+    colors[k++]=(Math.round(r/n)>>4)<<8|(Math.round(g/n)>>4)<<4|(Math.round(b/n)>>4)
+   }
+   worker.postMessage({type:"frame",index:i,colors},[colors.buffer]);
+   if(i%2===0)await new Promise(r=>setTimeout(r,0));
+  }
+  if(processing){setStatus("Finalizing encoder...");worker.postMessage({type:"finish"})}
+ }catch(e){processing=false;if(worker){worker.terminate();worker=null}setStatus("Failed: "+(e.message||e));log(String(e.stack||e));convert.disabled=false;fileInput.disabled=false}
+};
+const repairInput=$("repairFile"),repairDrop=$("repairDrop"),repairBtn=$("repair"),repairBar=$("repairBar"),repairStatus=$("repairStatus"),repairInfo=$("repairInfo"),repairSize=$("repairSize");
+repairDrop.onclick=()=>{if(!repairing)repairInput.click()};
+repairInput.onchange=()=>selectRepairFile(repairInput.files[0]);
+["dragenter","dragover"].forEach(e=>repairDrop.addEventListener(e,x=>{x.preventDefault();repairDrop.classList.add("drag")}));
+["dragleave","drop"].forEach(e=>repairDrop.addEventListener(e,x=>{x.preventDefault();repairDrop.classList.remove("drag")}));
+repairDrop.addEventListener("drop",e=>selectRepairFile(e.dataTransfer.files[0]));
+function selectRepairFile(f){
+ if(!f)return;
+ repairFile=f;repairInfo.textContent=f.name;repairSize.textContent=(f.size/1048576).toFixed(1)+" MB";repairBtn.disabled=false;repairStatus.textContent="Ready to repair";repairBar.style.width="0%";
+}
+async function repairVideoData(){
+ if(repairing||!repairFile)return;
+ repairing=true;repairBtn.disabled=true;repairInput.disabled=true;repairBar.style.width="0%";repairStatus.textContent="Preparing...";
+ let writer=null,url=null;
+ try{
+   const suggested=repairFile.name.replace(/\.lua$/i,"")+"_repaired.lua";
+   if("showSaveFilePicker" in window){
+     try{
+       const handle=await window.showSaveFilePicker({suggestedName:suggested,types:[{description:"Lua",accept:{"text/plain":[".lua"]}}]});
+       writer=await handle.createWritable();
+     }catch(e){if(e.name==="AbortError")throw e}
+   }
+   const parts=[];
+   const emit=async x=>{if(!x)return;if(writer)await writer.write(x);else parts.push(x)};
+   const decoder=new TextDecoder();
+   const reader=repairFile.stream().getReader();
+   const lineSize=4096;
+   let carry="",state="before",line="",totalRead=0,foundStart=false,foundEnd=false;
+   async function addBase64(text){
+     text=text.replace(/\s+/g,"");
+     while(text.length){
+       const take=Math.min(lineSize-line.length,text.length);
+       line+=text.slice(0,take);text=text.slice(take);
+       if(line.length===lineSize){await emit(line+"\n");line=""}
+     }
+   }
+   while(true){
+     const r=await reader.read();
+     if(r.done)break;
+     totalRead+=r.value.byteLength;
+     carry+=decoder.decode(r.value,{stream:true});
+     if(state==="before"){
+       const m=carry.match(/(P\s*=\s*\[==\[)/);
+       if(m){await emit(carry.slice(0,m.index+m[0].length));carry=carry.slice(m.index+m[0].length);state="inside";foundStart=true}
+       else if(carry.length>65536){await emit(carry.slice(0,carry.length-64));carry=carry.slice(-64)}
+     }
+     if(state==="inside"){
+       const end=carry.indexOf("]==]");
+       if(end>=0){await addBase64(carry.slice(0,end));if(line){await emit(line+"\n");line=""}await emit("]==]");carry=carry.slice(end+4);state="after";foundEnd=true}
+       else if(carry.length>262144){await addBase64(carry);carry=""}
+     }
+     if(state==="after"&&carry){await emit(carry);carry=""}
+     repairBar.style.width=Math.min(95,totalRead/repairFile.size*95)+"%";
+     repairStatus.textContent=`Repairing ${(totalRead/1048576).toFixed(1)} / ${(repairFile.size/1048576).toFixed(1)} MB`;
+   }
+   carry+=decoder.decode();
+   if(state==="before"){
+     const m=carry.match(/(P\s*=\s*\[==\[)/);
+     if(!m)throw Error("Could not find P = [==[ in this file.");
+     await emit(carry.slice(0,m.index+m[0].length));carry=carry.slice(m.index+m[0].length);state="inside";foundStart=true;
+   }
+   if(state==="inside"){
+     const end=carry.indexOf("]==]");
+     if(end<0)throw Error("Could not find the end of the Base64 payload.");
+     await addBase64(carry.slice(0,end));
+     if(line){await emit(line+"\n");line=""}
+     await emit("]==]");carry=carry.slice(end+4);state="after";foundEnd=true;
+   }
+   if(state==="after"&&carry)await emit(carry);
+   if(!foundStart||!foundEnd)throw Error("This does not look like a valid VideoData.lua file.");
+   if(writer){await writer.close();writer=null}else{
+     const blob=new Blob(parts,{type:"text/plain;charset=utf-8"});url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=suggested;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+   }
+   repairBar.style.width="100%";repairStatus.textContent="Done · existing video data was only reformatted";repairInfo.textContent=`${repairFile.name} → repaired`;repairSize.textContent="Download ready";
+ }catch(e){if(writer){try{await writer.abort()}catch{}writer=null}repairStatus.textContent="Failed: "+(e.message||e)}
+ finally{repairing=false;repairBtn.disabled=false;repairInput.disabled=false}
+}
+repairBtn.onclick=repairVideoData;
+updateEstimate();
+</script>
+</body>
+</html>
